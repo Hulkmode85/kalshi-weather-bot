@@ -50,6 +50,7 @@ class Config:
 
     # Edge must exceed Kalshi taker fee break-even (3.5% at 75¢)
     MIN_EDGE_PCT:    float = float(os.getenv("MIN_EDGE_PCT", "0.05"))
+    MAKER_FEE:       float = float(os.getenv("MAKER_FEE", "0.0175"))
     # Only trade contracts priced ≥75¢ (taker fee break-even threshold)
     MIN_KALSHI_PRICE: int  = int(os.getenv("MIN_KALSHI_PRICE", "75"))
     # Minimum open contracts in market
@@ -456,6 +457,11 @@ async def find_weather_opportunities(
 
         # ── Standard high-probability trade ──────────────────────────────────
         if best_edge < Config.MIN_EDGE_PCT:
+            continue
+
+        # Fee-aware EV check
+        ev_after_fees = best_edge - Config.MAKER_FEE
+        if ev_after_fees <= 0:
             continue
 
         # Fee filter: only trade ≥MIN_KALSHI_PRICE
