@@ -31,6 +31,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from dotenv import load_dotenv
 
 load_dotenv()
+from risk_guard import RiskManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,6 +39,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger("weather_bot")
+
+risk_manager = RiskManager()
 
 
 class Config:
@@ -610,6 +613,18 @@ async def main():
                             f"  Side: {opp.best_side.upper()} @{opp.best_price}¢  Vol: {opp.volume}"
                         )
 
+                        # ── Risk Guard check ──
+                        _rg_contracts = max(1, int(min(Config.MAX_TRADE_USD / (opp.best_price / 100), 500))) if not opp.is_micro_bet else max(1, int(Config.MICRO_BET_MAX_USD / (opp.best_price / 100)))
+                        if not Config.PAPER_MODE:
+                            allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
+                            if not allowed:
+                                log.warning(f"Risk guard blocked: {reason}")
+                                continue
+                        else:
+                            allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
+                            if not allowed:
+                                log.info(f"[PAPER] Risk guard would block: {reason}")
+
                         if Config.PAPER_MODE and ledger:
                             result = ledger.execute(opp)
                             if result:
@@ -621,6 +636,7 @@ async def main():
                                 contracts = max(1, int(min(
                                     Config.MAX_TRADE_USD / (opp.best_price / 100), 500
                                 )))
+                            contracts = capped  # use risk-guard-capped value
                             try:
                                 result = await place_kalshi_order(
                                     http, opp.ticker, opp.best_side, contracts, opp.best_price
