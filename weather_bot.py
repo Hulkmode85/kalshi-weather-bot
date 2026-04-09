@@ -32,6 +32,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 from risk_guard import RiskManager
+import json as _json
+
+# ── Shadow Logging ────────────────────────────────────────────────────────────
+SHADOW_LOG_FILE = os.getenv("SHADOW_LOG_FILE", "shadow_log.jsonl")
+
+def shadow_log(opportunity: dict, taken: bool, reason: str = ""):
+    entry = {"ts": time.time(), "taken": taken, "reason": reason, **opportunity}
+    try:
+        with open(SHADOW_LOG_FILE, "a") as f:
+            f.write(_json.dumps(entry) + "\n")
+    except:
+        pass
 
 # ── Multi-strike: scan ALL strikes per event/series, not just one ────────────
 MULTI_STRIKE = os.getenv("MULTI_STRIKE", "true").lower() == "true"
@@ -630,6 +642,7 @@ async def main():
                             allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
                             if not allowed:
                                 log.warning(f"Risk guard blocked: {reason}")
+                                shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct}, taken=False, reason=f"risk guard: {reason}")
                                 continue
                         else:
                             allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
@@ -639,6 +652,7 @@ async def main():
                         if Config.PAPER_MODE and ledger:
                             result = ledger.execute(opp)
                             if result:
+                                shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct, "forecast_prob": opp.forecast_prob}, taken=True)
                                 traded_this_session.add(opp.ticker)
                         elif not Config.PAPER_MODE:
                             if opp.is_micro_bet:
