@@ -45,6 +45,46 @@ def shadow_log(opportunity: dict, taken: bool, reason: str = ""):
     except:
         pass
 
+
+# ── Virtual Portfolio Testing ─────────────────────────────────────────────
+VIRTUAL_PORTFOLIO_FILE = os.getenv("VIRTUAL_PORTFOLIO_FILE", "virtual_portfolios.jsonl")
+
+VIRTUAL_PORTFOLIOS = [
+    {"name": "aggressive", "kelly": 1.0, "min_edge": 0.02, "early_exit": 0.99},
+    {"name": "moderate", "kelly": 0.5, "min_edge": 0.05, "early_exit": 0.93},
+    {"name": "conservative", "kelly": 0.25, "min_edge": 0.08, "early_exit": 0.90},
+    {"name": "original_v1", "kelly": 1.0, "min_edge": 0.03, "early_exit": 0.99},
+    {"name": "high_edge", "kelly": 0.5, "min_edge": 0.10, "early_exit": 0.93},
+    {"name": "ultra_conservative", "kelly": 0.25, "min_edge": 0.12, "early_exit": 0.90},
+]
+
+def evaluate_virtual_portfolios(opportunity: dict):
+    """Evaluate what each virtual portfolio would do with this opportunity."""
+    import json, time as _time
+    edge = opportunity.get("edge", 0)
+    price = opportunity.get("price", 0)
+    results = []
+    for vp in VIRTUAL_PORTFOLIOS:
+        would_trade = edge >= vp["min_edge"]
+        would_exit_early = price >= vp["early_exit"] * 100
+        results.append({
+            "portfolio": vp["name"],
+            "would_trade": would_trade,
+            "would_exit_early": would_exit_early,
+            "kelly": vp["kelly"],
+            "min_edge": vp["min_edge"],
+        })
+    entry = {
+        "ts": _time.time(),
+        "opportunity": opportunity,
+        "portfolios": results,
+    }
+    try:
+        with open(VIRTUAL_PORTFOLIO_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except:
+        pass
+
 # ── Multi-strike: scan ALL strikes per event/series, not just one ────────────
 
 # ─── Regime Detection — pause trading during extreme volatility ────────────
@@ -709,6 +749,7 @@ async def main():
                             if not allowed:
                                 log.warning(f"Risk guard blocked: {reason}")
                                 shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct}, taken=False, reason=f"risk guard: {reason}")
+                                evaluate_virtual_portfolios({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct})
                                 continue
                         else:
                             allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
@@ -723,8 +764,10 @@ async def main():
                                 if regime == "CRASH":
                                     log.warning("REGIME CRASH on kalshi_weather_bot — skipping trade")
                                     shadow_log({"bot": "kalshi_weather_bot", "regime": regime}, taken=False, reason="crash regime")
+                                    evaluate_virtual_portfolios({"bot": "kalshi_weather_bot", "regime": regime})
                                     continue
                                 shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct, "forecast_prob": opp.forecast_prob}, taken=True)
+                                evaluate_virtual_portfolios({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct, "forecast_prob": opp.forecast_prob})
                                 traded_this_session.add(opp.ticker)
                         elif not Config.PAPER_MODE:
                             if opp.is_micro_bet:
