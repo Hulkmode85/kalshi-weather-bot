@@ -31,6 +31,27 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ── Quant Fund Shadow Evaluators ─────────────────────────────────────────
+try:
+    from bayesian_updater import BayesianUpdater
+    from ensemble_model import EnsembleModel
+    from time_decay_edge import calculate_time_weighted_edge
+    from correlation_matrix import CorrelationTracker
+    from vpin_toxicity import VPINTracker
+    from market_impact import estimate_market_impact
+    from feature_engine import FeatureEngine
+    from portfolio_optimizer import PortfolioOptimizer
+    _quant_modules_available = True
+    _bayesian = BayesianUpdater()
+    _ensemble = EnsembleModel()
+    _correlation = CorrelationTracker()
+    _vpin = VPINTracker()
+    _features = FeatureEngine()
+    _portfolio = PortfolioOptimizer()
+except ImportError:
+    _quant_modules_available = False
+
 from risk_guard import RiskManager
 import json as _json
 
@@ -750,6 +771,15 @@ async def main():
                                 log.warning(f"Risk guard blocked: {reason}")
                                 shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct}, taken=False, reason=f"risk guard: {reason}")
                                 evaluate_virtual_portfolios({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct})
+                                if _quant_modules_available:
+                                    try:
+                                        _features.extract({"price": locals().get("price", 0), "volume": locals().get("volume", 0), "bid": locals().get("bid", 0), "ask": locals().get("ask", 0)})
+                                        _bayesian.update(locals().get("market_id", locals().get("ticker", "unknown")), locals().get("price", 0), time.time())
+                                        _td_edge = calculate_time_weighted_edge(locals().get("edge", 0), locals().get("minutes_remaining", locals().get("time_remaining", 15)), 15)
+                                        _vpin.update(locals().get("price", 0), locals().get("volume", 0))
+                                        _mi = estimate_market_impact(locals().get("contracts", 1), locals().get("volume", 100))
+                                    except:
+                                        pass
                                 continue
                         else:
                             allowed, reason, capped = risk_manager.pre_trade_check(opp.ticker, opp.best_price, _rg_contracts, opp.best_side, bot_name="weather-bot")
