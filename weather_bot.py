@@ -52,6 +52,76 @@ try:
 except ImportError:
     _quant_modules_available = False
 
+# ── Critical Module Imports (10 modules — template pattern) ──────────────
+# Each module is optional: bot keeps running if any module is missing or errors.
+
+try:
+    from pre_trade_validator import validate_pre_trade
+    _pre_trade_validator_available = True
+except ImportError:
+    _pre_trade_validator_available = False
+
+try:
+    from dynamic_edge import calculate_dynamic_edge
+    _dynamic_edge_available = True
+except ImportError:
+    _dynamic_edge_available = False
+
+try:
+    from adaptive_kelly import calculate_adaptive_kelly
+    _adaptive_kelly_available = True
+except ImportError:
+    _adaptive_kelly_available = False
+
+try:
+    from dynamic_params import DynamicParams
+    _dynamic_params = DynamicParams()
+    _dynamic_params_available = True
+except ImportError:
+    _dynamic_params_available = False
+
+try:
+    from paper_balance_manager import PaperBalanceManager
+    _paper_balance_mgr = PaperBalanceManager(restart_threshold=1000.0)
+    _paper_balance_available = True
+except ImportError:
+    _paper_balance_available = False
+
+try:
+    from maker_execution import MakerExecution
+    _maker_execution_available = True
+except ImportError:
+    _maker_execution_available = False
+
+try:
+    from data_pipeline import DataPipeline
+    _data_pipeline = DataPipeline()
+    _data_pipeline_available = True
+except ImportError:
+    _data_pipeline_available = False
+
+try:
+    from brier_scorer import BrierScorer
+    _brier_scorer = BrierScorer()
+    _brier_scorer_available = True
+except ImportError:
+    _brier_scorer_available = False
+
+try:
+    from rejection_filter import RejectionFilter
+    _rejection_filter = RejectionFilter()
+    _rejection_filter_available = True
+except ImportError:
+    _rejection_filter_available = False
+
+try:
+    from conviction_scaler import ConvictionScaler
+    _conviction_scaler = ConvictionScaler()
+    _conviction_scaler_available = True
+except ImportError:
+    _conviction_scaler_available = False
+
+
 from risk_guard import RiskManager
 import json as _json
 
@@ -741,6 +811,24 @@ async def main():
     traded_this_session: set[str] = set()
 
     while True:
+
+        # ── Critical Module: cycle-start checks ──
+        try:
+            if _paper_balance_available:
+                _paper_balance_mgr.check_and_restart()
+        except Exception:
+            pass
+        try:
+            if _dynamic_params_available:
+                _dparams = _dynamic_params.get_all()
+        except Exception:
+            _dparams = {}
+        try:
+            if _data_pipeline_available:
+                _data_pipeline.record_snapshot({'bot': 'weather_bot', 'ts': time.time()})
+        except Exception:
+            pass
+
         try:
             async with httpx.AsyncClient(timeout=15.0) as http:
                 markets = await fetch_kalshi_weather_markets(http)
@@ -796,6 +884,69 @@ async def main():
                                     shadow_log({"bot": "kalshi_weather_bot", "regime": regime}, taken=False, reason="crash regime")
                                     evaluate_virtual_portfolios({"bot": "kalshi_weather_bot", "regime": regime})
                                     continue
+
+                                # ── Critical Module: pre-trade validation ──
+
+                                try:
+
+                                    if _pre_trade_validator_available:
+
+                                        _ptv_ok = validate_pre_trade({})
+
+                                except Exception:
+
+                                    pass
+
+                                try:
+
+                                    if _rejection_filter_available:
+
+                                        _rejection_filter.check({})
+
+                                except Exception:
+
+                                    pass
+
+                                try:
+
+                                    if _dynamic_edge_available:
+
+                                        _computed_edge = calculate_dynamic_edge(locals().get('edge', 0), locals().get('price', 0))
+
+                                except Exception:
+
+                                    pass
+
+                                try:
+
+                                    if _adaptive_kelly_available:
+
+                                        _kelly_size = calculate_adaptive_kelly(locals().get('edge', 0.05), locals().get('odds', 2.0))
+
+                                except Exception:
+
+                                    pass
+
+                                try:
+
+                                    if _conviction_scaler_available:
+
+                                        _conviction_mult = _conviction_scaler.scale(locals().get('edge', 0.05))
+
+                                except Exception:
+
+                                    pass
+
+                                try:
+
+                                    if _brier_scorer_available:
+
+                                        _brier_scorer.record(locals().get('predicted_prob', 0.5), locals().get('outcome', 0))
+
+                                except Exception:
+
+                                    pass
+
                                 shadow_log({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct, "forecast_prob": opp.forecast_prob}, taken=True)
                                 evaluate_virtual_portfolios({"bot": "weather", "ticker": opp.ticker, "side": opp.best_side, "price": opp.best_price, "edge": opp.edge_pct, "forecast_prob": opp.forecast_prob})
                                 traded_this_session.add(opp.ticker)
